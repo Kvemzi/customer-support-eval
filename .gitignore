@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.deepeval/
+
+# Evaluation outputs (keep the folder, ignore its contents)
+reports/*
+!reports/.gitkeep

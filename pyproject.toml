@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "support-agent-eval"
+version = "0.1.0"
+description = "Customer-support AI agent (SUT) and its LLM-as-a-judge evaluation harness."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "deepeval>=3.0.0",
+    "pytest>=8.0.0",
+    "python-dotenv>=1.0.0",
+    "openai>=1.30.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.5.0", "mypy>=1.10.0"]
+
+[project.scripts]
+# After installation: `shopco-chat` starts the interactive agent.
+shopco-chat = "support_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# Restrict collection to tests/ so src/agent_eval/test_dataset.py
+# is NOT mistaken for a test module.
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "llm: tests that call the LLM judge (cost tokens, require OPENAI_API_KEY)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

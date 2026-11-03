@@ -1,0 +1,9 @@
+# Runtime dependencies (mirrors pyproject.toml; pin exact versions for reproducibility).
+deepeval>=3.0.0
+pytest>=8.0.0
+python-dotenv>=1.0.0
+openai>=1.30.0
+requests>=2.31.0
+
+# Install the project itself in editable mode (src/ layout -> importable packages).
+-e .

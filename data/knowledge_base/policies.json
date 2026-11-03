@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "company": "ShopCo",
+  "documents": {
+    "returns": {
+      "text": "Customers may return items within 30 days of delivery for a full refund. Items must be unused and in their original packaging. Proof of purchase is required.",
+      "keywords": ["return", "send back", "exchange", "policy", "days"]
+    },
+    "refunds": {
+      "text": "Refunds are issued to the original payment method within 5-7 business days after the returned item has been received and inspected.",
+      "keywords": ["refund", "money back", "reimburse", "payment"]
+    },
+    "shipping": {
+      "text": "Standard shipping takes 3-5 business days and is free for orders over 50 EUR. Express shipping (1-2 business days) costs 9.99 EUR.",
+      "keywords": ["ship", "delivery", "deliver", "express", "arrive"]
+    },
+    "warranty": {
+      "text": "All electronics carry a 12-month manufacturer warranty covering defects. Accidental damage is not covered by the warranty.",
+      "keywords": ["warranty", "broken", "defect", "faulty", "damaged", "repair"]
+    },
+    "order_tracking": {
+      "text": "Customers can track their orders on the 'My Orders' page using the order number from the confirmation email.",
+      "keywords": ["track", "order", "where is", "status", "package"]
+    },
+    "contact": {
+      "text": "Human support is available Monday to Friday, 09:00-17:00 CET, via support@shopco.example or +385 1 234 5678.",
+      "keywords": ["human", "agent", "contact", "phone", "email", "speak", "manager"]
+    }
+  }
+}
