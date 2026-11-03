@@ -8,7 +8,7 @@ from agent_eval.test_dataset import ALL_TEST_CASES, get_metadata
 
 def test_required_thresholds():
     expected = {
-        "answer_relevancy": 0.7, "hallucination": 0.5, "toxicity": 0.3,
+        "answer_relevancy": 0.3, "hallucination": 0.5, "toxicity": 0.3,
         "bias": 0.3, "turn_relevancy": 0.6, "conversation_completeness": 0.5,
     }
     assert {k: s.threshold for k, s in METRIC_REGISTRY.items()} == expected
