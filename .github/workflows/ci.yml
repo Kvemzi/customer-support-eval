@@ -2,33 +2,69 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
-  workflow_dispatch:        # manual trigger for the (paid) LLM evaluation
+  workflow_dispatch:
+    inputs:
+      dataset_mode:
+        description: "static (recorded outputs) or live (call the SUT)"
+        type: choice
+        options: [static, live]
+        default: static
+      runs:
+        description: "Number of repeated runs (2 = variability analysis)"
+        default: "2"
+  schedule:
+    - cron: "0 6 * * 1"        # Mondays 06:00 UTC (weekly regression check)
 
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
     env:
-      SUT_BACKEND: mock     # no API key needed
+      SUT_BACKEND: mock        # no API key needed
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+          cache: pip
       - run: pip install -r requirements.txt
       - run: pytest tests/unit -q
 
   llm-evals:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: unit-tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       SUT_BACKEND: openai
+      EVAL_DATASET_MODE: ${{ inputs.dataset_mode || 'static' }}
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+      NO_COLOR: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+          cache: pip
       - run: pip install -r requirements.txt
-      - run: deepeval test run tests/evals/test_suite.py
+
+      - name: Pytest suite via DeepEval CLI (assert_test)
+        run: deepeval test run tests/evals/test_suite.py
+
+      - name: Programmatic evaluation (evaluate) with repeated runs
+        run: python scripts/run_evaluation.py --mode "$EVAL_DATASET_MODE" --runs "${{ inputs.runs || '2' }}"
+
+      - name: Job summary
+        if: always()
+        run: python scripts/summarize_reports.py >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload JSON reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports
+          path: reports/
+          if-no-files-found: ignore
