@@ -55,6 +55,7 @@ jobs:
         run: deepeval test run tests/evals/test_suite.py
 
       - name: Programmatic evaluation (evaluate) with repeated runs
+        if: always()
         run: python scripts/run_evaluation.py --mode "$EVAL_DATASET_MODE" --runs "${{ inputs.runs || '2' }}"
 
       - name: Job summary
@@ -68,3 +69,19 @@ jobs:
           name: eval-reports
           path: reports/
           if-no-files-found: ignore
+
+
+          
+
+
+
+
+
+          - name: Run Evaluation Suite
+  run: python scripts/run_evaluation.py --mode ${{ env.EVAL_DATASET_MODE }}
+  env:
+    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    SUT_BACKEND: ${{ env.SUT_BACKEND }}
+
+- name: Summarize Evaluation Reports
+  run: python scripts/summarize_reports.py >> "$GITHUB_STEP_SUMMARY"
