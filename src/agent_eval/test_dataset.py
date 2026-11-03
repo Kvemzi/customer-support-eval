@@ -1,4 +1,4 @@
-﻿"""
+"""
 agent_eval.test_dataset
 =======================
 DeepEval test cases for the ShopCo support agent (the SUT).
