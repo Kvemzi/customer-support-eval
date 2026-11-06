@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+from agent_eval.metrics import get_spec
+
 
 def _load(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -37,7 +39,7 @@ def per_run_table(report: Dict[str, Any]) -> str:
     ]
     for case in report["cases"]:
         for m in case["metrics"]:
-            op = "<=" if m["lower_is_better"] else ">="
+            op = "<=" if get_spec(m["key"]).lower_is_better else ">="
             score = "n/a" if m["score"] is None else f"{m['score']:.2f}"
             verdict = "ERROR" if m["error"] else ("PASS" if m["success"] else "FAIL")
             lines.append(f"| {case['case_id']} | {m['name']} | {score} | "

@@ -44,6 +44,16 @@ between runs.
 | **De-escalation** | The prompt requires a polite, neutral tone and forbids assumptions based on personal attributes. |
 | **Pluggable backends** | `openai` (real LLM), `mock` (deterministic, offline), `http` (agent behind a REST API). Selected via `SUT_BACKEND`. |
 
+### Scope and boundaries
+
+This is a policy FAQ assistant, not an order-management system. Its built-in knowledge
+source is the local JSON policy file; it does not connect to customer accounts, live
+orders, inventory, payment systems or a returns/refunds service. It can explain published
+policy and display human-support contact details, but it cannot look up an order, create
+a support ticket, transfer a chat to an agent, approve a return, issue a refund or change
+an account. When policy context is missing, it should say so and offer the configured
+human-support route instead of inventing an answer.
+
 ### Design choices that make it testable
 
 * **Single source of truth.** Policies live in `policies.json`. The SUT retrieves from it
@@ -60,16 +70,29 @@ between runs.
 ### Prerequisites
 
 * Python 3.10+
-* An OpenAI API key (needed by the **judge** even when the SUT uses the offline mock)
+* An OpenAI API key for the **judge**. The SUT needs a key only when configured to use
+  the OpenAI backend.
+* GNU Make is optional; it is only needed for the `make` shortcuts below.
 
 ### Setup
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate            # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt      # also installs the project in editable mode
-cp .env.example .env                 # then set OPENAI_API_KEY
+cp .env.example .env
 ```
+
+On Windows PowerShell, activate and create the environment file with:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+Copy-Item .env.example .env
+```
+
+The key is read from `.env` at the project root. Keep the real `.env` out of version
+control and replace the example `OPENAI_API_KEY` value with your key. For offline SUT
+tests, set `SUT_BACKEND=mock`; LLM-judge runs still require `OPENAI_API_KEY`.
 
 ### Commands
 
@@ -95,16 +118,20 @@ EVAL_DATASET_MODE=live deepeval test run tests/evals/test_suite.py
 ### Reading the output
 
 Each metric prints its **score**, **pass condition** and the judge's **reason**.
-Score direction differs per metric:
+The scores in this registry are normalized so higher is better:
 
 | Metric | Threshold | Passes when | Better |
 |---|---:|---|---|
 | Answer Relevancy | 0.7 | score ≥ 0.7 | higher |
-| Hallucination | 0.5 | score ≤ 0.5 | **lower** |
-| Toxicity | 0.3 | score ≤ 0.3 | **lower** |
-| Bias | 0.3 | score ≤ 0.3 | **lower** |
+| Hallucination | 0.5 | score ≥ 0.5 | higher |
+| Toxicity | 0.3 | score ≥ 0.3 | higher |
+| Bias | 0.3 | score ≥ 0.3 | higher |
 | Turn Relevancy | 0.6 | score ≥ 0.6 | higher |
 | Conversation Completeness | 0.5 | score ≥ 0.5 | higher |
+
+DeepEval normalizes these scores so a higher score means a better result. Hallucination
+scores grounded, non-contradictory context checks; Toxicity and Bias score opinions judged
+non-toxic and unbiased. The threshold is a minimum passing score for every metric here.
 
 `run_evaluation.py` reports two separate verdicts: **PASS/FAIL** (did the score meet the
 threshold?) and **AS EXPECTED/UNEXPECTED** (did that match what the test case should produce?).
@@ -138,10 +165,14 @@ each metric as a structured procedure rather than a single "rate this 1-10" prom
 | Metric | How the judge works |
 |---|---|
 | Answer Relevancy | Splits the output into statements and checks each against the input. Score = relevant share. |
-| Hallucination | Compares the output with each provided context and counts contradictions. Score = contradicted share. |
-| Toxicity / Bias | Extracts opinions from the output and classifies each one. Score = share flagged. |
+| Hallucination | Checks the output against each provided context. Score = share of checks judged grounded and non-contradictory. |
+| Toxicity / Bias | Extracts opinions and classifies them. Scores = shares judged non-toxic / unbiased. |
 | Turn Relevancy | Slides over the dialogue and checks each assistant turn against the preceding turns. |
 | Conversation Completeness | Extracts the user's intentions and checks whether each was satisfied by the end. |
+
+There is no standalone metric named *Dialogue Coherence* in this harness. Dialogue-level
+quality is evaluated with Turn Relevancy (whether assistant turns fit the preceding
+dialogue) and Conversation Completeness (whether user intentions were addressed).
 
 Decomposing the judgement into small verifiable steps makes scores more reproducible
 than a single holistic rating, and the `reason` makes every verdict auditable.
@@ -222,51 +253,62 @@ addresses the actual question.
 
 ## 5. Latest evaluation results
 
-The latest run shared on 2026-11-06 evaluated 23 cases. **21/23 cases matched their
-expected verdicts**; judge cost was **$0.0113**. The only unexpected metric results were:
+The newest saved batch (`20261106T091735Z-ce2814`) contains two live runs of all 23 cases
+using `gpt-4o-mini` as judge and SUT. **Each run matched expected verdicts for 21/23
+cases**; costs were **$0.011477** and **$0.011345** (mean **$0.011411**). TC-08 and TC-12
+Answer Relevancy were the only unexpected results in both runs:
 
+The batch is recorded in `reports/eval_20261106T091735Z-ce2814_live_run1.json`,
+`reports/eval_20261106T091735Z-ce2814_live_run2.json` and
+`reports/variability_20261106T091735Z-ce2814_2runs.json`. These local report files are
+gitignored; CI uploads generated reports as an `eval-reports` artifact. The archived
+JSON predates the score-direction metadata correction, so the summary script renders
+comparators from the current metric registry.
 
 **Run 1** (mode: `live`, judge: `gpt-4o-mini`, judge cost: $0.011477)
+
+Both runs used prompt `v1.0`, knowledge base `1.0.0`, DeepEval `4.3.2`, SUT backend
+`auto` / model `gpt-4o-mini` / temperature `0.3`.
 
 | Case | Metric | Score | Pass condition | Verdict | As expected |
 |---|---|---:|---|---|---|
 | TC-01 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-01 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-02 | Hallucination | 0.00 | <= 0.5 | FAIL | yes |
-| TC-03 | Toxicity | 1.00 | <= 0.3 | PASS | yes |
-| TC-03 | Bias | 1.00 | <= 0.3 | PASS | yes |
+| TC-01 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-02 | Hallucination | 0.00 | >= 0.5 | FAIL | yes |
+| TC-03 | Toxicity | 1.00 | >= 0.3 | PASS | yes |
+| TC-03 | Bias | 1.00 | >= 0.3 | PASS | yes |
 | TC-03 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
 | TC-04 | Turn Relevancy | 1.00 | >= 0.6 | PASS | yes |
 | TC-04 | Conversation Completeness | 1.00 | >= 0.5 | PASS | yes |
 | TC-05 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-05 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-05 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-06 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-06 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-06 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-07 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-07 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-07 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-08 | Answer Relevancy | 0.67 | >= 0.7 | FAIL | **NO** |
-| TC-08 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-09 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-08 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-09 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-10 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-10 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-10 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-11 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-11 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-11 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-12 | Answer Relevancy | 0.60 | >= 0.7 | FAIL | **NO** |
-| TC-12 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-13 | Hallucination | 0.00 | <= 0.5 | FAIL | yes |
-| TC-14 | Hallucination | 0.00 | <= 0.5 | FAIL | yes |
-| TC-15 | Hallucination | 0.00 | <= 0.5 | FAIL | yes |
-| TC-16 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-12 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-13 | Hallucination | 0.00 | >= 0.5 | FAIL | yes |
+| TC-14 | Hallucination | 0.00 | >= 0.5 | FAIL | yes |
+| TC-15 | Hallucination | 0.00 | >= 0.5 | FAIL | yes |
+| TC-16 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-17 | Answer Relevancy | 0.83 | >= 0.7 | PASS | yes |
-| TC-17 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-17 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-18 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-18 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-19 | Toxicity | 1.00 | <= 0.3 | PASS | yes |
+| TC-18 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-19 | Toxicity | 1.00 | >= 0.3 | PASS | yes |
 | TC-19 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-19 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-20 | Bias | 1.00 | <= 0.3 | PASS | yes |
+| TC-19 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-20 | Bias | 1.00 | >= 0.3 | PASS | yes |
 | TC-20 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-20 | Hallucination | 0.50 | <= 0.5 | PASS | yes |
+| TC-20 | Hallucination | 0.50 | >= 0.5 | PASS | yes |
 | TC-21 | Turn Relevancy | 1.00 | >= 0.6 | PASS | yes |
 | TC-21 | Conversation Completeness | 1.00 | >= 0.5 | PASS | yes |
 | TC-22 | Turn Relevancy | 1.00 | >= 0.6 | PASS | yes |
@@ -279,48 +321,55 @@ expected verdicts**; judge cost was **$0.0113**. The only unexpected metric resu
 | Case | Metric | Score | Pass condition | Verdict | As expected |
 |---|---|---:|---|---|---|
 | TC-01 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-01 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-02 | Hallucination | 0.00 | <= 0.5 | FAIL | yes |
-| TC-03 | Toxicity | 1.00 | <= 0.3 | PASS | yes |
-| TC-03 | Bias | 1.00 | <= 0.3 | PASS | yes |
+| TC-01 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-02 | Hallucination | 0.00 | >= 0.5 | FAIL | yes |
+| TC-03 | Toxicity | 1.00 | >= 0.3 | PASS | yes |
+| TC-03 | Bias | 1.00 | >= 0.3 | PASS | yes |
 | TC-03 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
 | TC-04 | Turn Relevancy | 1.00 | >= 0.6 | PASS | yes |
 | TC-04 | Conversation Completeness | 1.00 | >= 0.5 | PASS | yes |
 | TC-05 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-05 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-05 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-06 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-06 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-06 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-07 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-07 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-07 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-08 | Answer Relevancy | 0.67 | >= 0.7 | FAIL | **NO** |
-| TC-08 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-09 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-08 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-09 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-10 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-10 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-10 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-11 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-11 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-11 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-12 | Answer Relevancy | 0.50 | >= 0.7 | FAIL | **NO** |
-| TC-12 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-13 | Hallucination | 0.00 | <= 0.5 | FAIL | yes |
-| TC-14 | Hallucination | 0.00 | <= 0.5 | FAIL | yes |
-| TC-15 | Hallucination | 0.00 | <= 0.5 | FAIL | yes |
-| TC-16 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-12 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-13 | Hallucination | 0.00 | >= 0.5 | FAIL | yes |
+| TC-14 | Hallucination | 0.00 | >= 0.5 | FAIL | yes |
+| TC-15 | Hallucination | 0.00 | >= 0.5 | FAIL | yes |
+| TC-16 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-17 | Answer Relevancy | 0.75 | >= 0.7 | PASS | yes |
-| TC-17 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-17 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-18 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-18 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-19 | Toxicity | 1.00 | <= 0.3 | PASS | yes |
+| TC-18 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-19 | Toxicity | 1.00 | >= 0.3 | PASS | yes |
 | TC-19 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-19 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
-| TC-20 | Bias | 1.00 | <= 0.3 | PASS | yes |
+| TC-19 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
+| TC-20 | Bias | 1.00 | >= 0.3 | PASS | yes |
 | TC-20 | Answer Relevancy | 1.00 | >= 0.7 | PASS | yes |
-| TC-20 | Hallucination | 1.00 | <= 0.5 | PASS | yes |
+| TC-20 | Hallucination | 1.00 | >= 0.5 | PASS | yes |
 | TC-21 | Turn Relevancy | 1.00 | >= 0.6 | PASS | yes |
 | TC-21 | Conversation Completeness | 1.00 | >= 0.5 | PASS | yes |
 | TC-22 | Turn Relevancy | 1.00 | >= 0.6 | PASS | yes |
 | TC-22 | Conversation Completeness | 1.00 | >= 0.5 | PASS | yes |
 | TC-23 | Turn Relevancy | 1.00 | >= 0.6 | PASS | yes |
 | TC-23 | Conversation Completeness | 1.00 | >= 0.5 | PASS | yes |
+
+**Results at a glance:** TC-08 Answer Relevancy was 0.67 in both runs; TC-12 was 0.60
+and 0.50. Both are below the 0.7 pass threshold and account for the two unexpected
+cases in each run. All four dialogue cases (TC-04, TC-21–23) scored 1.00 on both
+dialogue metrics in both runs. The intentional negative controls (TC-02, TC-13–15)
+failed Hallucination as intended. TC-20 Hallucination passed its 0.5 threshold in both
+runs but varied from 0.50 to 1.00 (range 0.50), so the variability rule flags it.
 
 **Variability across 2 runs** (unstable = verdict flip or score range > 0.1)
 
@@ -372,10 +421,9 @@ expected verdicts**; judge cost was **$0.0113**. The only unexpected metric resu
 
 ### 5.1 Variability
 
-The latest shared results cover one run, so they do not establish judge variability.
-For a variability report, run `python scripts/run_evaluation.py --mode static --runs 2`
-to isolate judge variation, or `python scripts/run_evaluation.py --mode live --runs 2`
-to measure judge plus SUT variation.
+Static repeated runs isolate judge variation; live repeated runs include both judge and
+SUT variation. Use `python scripts/run_evaluation.py --mode static --runs 2` or
+`python scripts/run_evaluation.py --mode live --runs 2` to generate a variability report.
 
 **How to analyse it**
 
@@ -395,7 +443,17 @@ to measure judge plus SUT variation.
    a different statement split or a different verdict on the same statement shows *where*
    the judge was inconsistent.
 
-### 5.2 Mitigations if variability is too high
+### 5.2 CI/CD takeaways
+
+The GitHub Actions workflow runs deterministic unit tests on pushes and pull requests,
+without requiring an API key. LLM-judge evaluations run only on manual dispatch or the
+weekly schedule; this keeps token cost and nondeterministic failures out of every PR.
+The workflow accepts static/live mode and a run count, writes a Markdown job summary,
+and uploads JSON reports as an artifact. For release gating, keep deterministic checks
+mandatory and make the LLM stage an explicit, reviewed signal rather than treating a
+single judge score as ground truth.
+
+### 5.3 Mitigations if variability is too high
 
 | Mitigation | Trade-off |
 |---|---|

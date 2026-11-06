@@ -15,8 +15,8 @@ def test_required_thresholds():
 
 
 def test_score_direction():
-    lower_better = {k for k, s in METRIC_REGISTRY.items() if s.lower_is_better}
-    assert lower_better == {"hallucination", "toxicity", "bias"}
+    assert all(not spec.lower_is_better for spec in METRIC_REGISTRY.values())
+    assert all(spec.comparator == f">= {spec.threshold}" for spec in METRIC_REGISTRY.values())
 
 
 def test_every_target_metric_is_registered_and_compatible():
