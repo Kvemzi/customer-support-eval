@@ -1,7 +1,7 @@
 import pytest
 
 from agent_eval import test_dataset
-from scripts.run_evaluation import load_cases
+from run_evaluation import load_cases
 from support_agent.schemas import AgentResponse
 
 

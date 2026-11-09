@@ -38,6 +38,7 @@ shopco_policy_data = ["policies.json"]
 # is NOT mistaken for a test module.
 testpaths = ["tests"]
 addopts = "-ra"
+pythonpath = ["scripts"]
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "llm: tests that call the LLM judge (cost tokens, require OPENAI_API_KEY)",

@@ -1,4 +1,4 @@
-from src.agent_eval.reporting import CaseResult, MetricResult, RunResult, compute_variability
+from agent_eval.reporting import CaseResult, MetricResult, RunResult, compute_variability
 
 
 def make_run(index, score=None, success=None, error=None, include_metric=True):
@@ -16,7 +16,7 @@ def make_run(index, score=None, success=None, error=None, include_metric=True):
 
 
 def test_failed_measurements_are_incomplete_not_stable(capsys):
-    from src.agent_eval.reporting import print_variability_report
+    from agent_eval.reporting import print_variability_report
 
     runs = [make_run(1, error="judge error"), make_run(2, error="judge error")]
     rows = compute_variability(runs)

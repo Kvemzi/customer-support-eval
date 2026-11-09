@@ -3,9 +3,6 @@
 import json
 import os
 import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
 
 from summarize_reports import main, per_run_table, variability_table
 
