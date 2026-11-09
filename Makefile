@@ -18,14 +18,14 @@ eval-live:          ## Evaluate the live SUT
 eval-twice:         ## Double run + stochastic variability report
 	python scripts/run_evaluation.py --mode live --runs 2
 
-test-llm:           ## LLM-as-a-judge test suite via DeepEval CLI (Prompt 4)
+test-llm:           ## LLM-as-a-judge test suite via DeepEval CLI
 	deepeval test run tests/evals/test_suite.py
 
 test-llm-twice:     ## Two consecutive runs for the stochastic variability analysis
 	deepeval test run tests/evals/test_suite.py && deepeval test run tests/evals/test_suite.py
 
 lint:
-	ruff check src tests scripts
+	ruff check src tests scripts data
 
 summary:            ## Markdown tables from the latest JSON reports (for the README)
 	python scripts/summarize_reports.py

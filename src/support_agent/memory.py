@@ -29,7 +29,7 @@ class ConversationMemory:
 
     def get_messages(self) -> List[Message]:
         """Return a copy so callers cannot mutate the internal state."""
-        return list(self._messages)
+        return [message.copy() for message in self._messages]
 
     def reset(self) -> None:
         self._messages.clear()

@@ -13,5 +13,8 @@ def test_memory_trims_to_max_turns():
 def test_get_messages_returns_copy():
     memory = ConversationMemory()
     memory.add_user_message("hello")
-    memory.get_messages().clear()
+    messages = memory.get_messages()
+    messages[0]["content"] = "changed"
+    messages.clear()
     assert len(memory) == 1
+    assert memory.get_messages()[0]["content"] == "hello"

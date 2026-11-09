@@ -60,9 +60,12 @@ def variability_table(data: Dict[str, Any]) -> str:
         scores = ", ".join(f"{s:.2f}" for s in r["scores"]) or "n/a"
         mean = "n/a" if r["mean"] is None else f"{r['mean']:.2f}"
         rng = "n/a" if r["range"] is None else f"{r['range']:.2f}"
+        status = "INCOMPLETE" if not r.get("complete", True) else (
+            "UNSTABLE" if r["unstable"] else "stable"
+        )
         lines.append(f"| {r['case_id']} | {r['metric']} | {scores} | {mean} | "
                      f"{r['stdev']:.2f} | {rng} | {'yes' if r['verdict_flip'] else 'no'} | "
-                     f"{'UNSTABLE' if r['unstable'] else 'stable'} |")
+                     f"{status} |")
     return "\n".join(lines)
 
 
@@ -73,8 +76,22 @@ def main() -> int:
 
     root = Path(args.reports_dir)
     variability = _newest(list(root.glob("variability_*.json")))
-    if variability:
-        data = _load(variability[0])
+    runs = _newest(list(root.glob("eval_*_run*.json")))
+    if not variability and not runs:
+        print(f"No reports found in {root}/. Run scripts/run_evaluation.py first.",
+              file=sys.stderr)
+        return 1
+
+    latest_run = _load(runs[0]) if runs else None
+    latest_variability = _load(variability[0]) if variability else None
+    if latest_run and (
+        not variability or runs[0].stat().st_mtime >= variability[0].stat().st_mtime
+    ):
+        matching = _newest(list(root.glob(f"variability_{latest_run['run_id']}_*runs.json")))
+        latest_variability = _load(matching[0]) if matching else None
+
+    if latest_variability:
+        data = latest_variability
         batch = data["run_ids"][0]
         print(f"<!-- batch: {batch} -->\n")
         for run_file in sorted(root.glob(f"eval_{batch}_*_run*.json")):
@@ -82,12 +99,9 @@ def main() -> int:
         print(variability_table(data))
         return 0
 
-    runs = _newest(list(root.glob("eval_*_run*.json")))
-    if not runs:
-        print(f"No reports found in {root}/. Run scripts/run_evaluation.py first.",
-              file=sys.stderr)
-        return 1
-    print(per_run_table(_load(runs[0])))
+    if latest_run is None:
+        raise ValueError(f"No run report found for the latest batch in {root}")
+    print(per_run_table(latest_run))
     return 0
 
 

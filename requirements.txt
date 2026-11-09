@@ -1,5 +1,8 @@
-# Runtime dependencies (mirrors pyproject.toml; pin exact versions for reproducibility).
-deepeval>=3.0.0
+# Pin transitive versions for repeatable installs.
+-c requirements.lock
+
+# Runtime dependencies (mirrors pyproject.toml).
+deepeval>=4.3.2,<5.0
 pytest>=8.0.0
 python-dotenv>=1.0.0
 openai>=1.30.0

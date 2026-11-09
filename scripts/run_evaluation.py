@@ -36,7 +36,7 @@ import uuid
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, cast
 
 # Fallback for running without `pip install -e .`: put src/ on the path.
 try:
@@ -44,7 +44,8 @@ try:
 except ImportError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from deepeval import evaluate
+from deepeval.evaluate import evaluate
+from deepeval.metrics.base_metric import BaseConversationalMetric, BaseMetric
 from deepeval.test_case import ConversationalTestCase
 
 try:  # DeepEval >= 3.x exposes the config objects here
@@ -121,13 +122,7 @@ def build_run_config(args: argparse.Namespace, judge_model: str, kb_version: str
 
 def load_cases(mode: str, selected_ids: List[str]):
     """Build test cases. In live mode the SUT is called again on every run."""
-    cases = get_all_test_cases(mode=mode)
-    if selected_ids:
-        cases = [c for c in cases if get_metadata(c)["id"] in selected_ids]
-        missing = set(selected_ids) - {get_metadata(c)["id"] for c in cases}
-        if missing:
-            raise KeyError(f"Unknown case id(s): {sorted(missing)}")
-    return cases
+    return get_all_test_cases(mode=mode, case_ids=selected_ids or None)
 
 
 def _describe_case(test_case) -> dict:
@@ -164,10 +159,15 @@ def evaluate_case(test_case, judge_model: str, async_mode: bool, verbose: bool) 
 
     # 2) Run DeepEval. Rendering is ours, so DeepEval's own printing is disabled.
     started = time.perf_counter()
+    metrics = [m for _, m in routed]
     try:
         result = evaluate(
             test_cases=[test_case],
-            metrics=[m for _, m in routed],
+            metrics=(
+                cast(List[BaseConversationalMetric], metrics)
+                if isinstance(test_case, ConversationalTestCase)
+                else cast(List[BaseMetric], metrics)
+            ),
             async_config=AsyncConfig(run_async=async_mode),
             display_config=DisplayConfig(print_results=False, show_indicator=True,
                                          verbose_mode=verbose),
@@ -193,12 +193,12 @@ def evaluate_case(test_case, judge_model: str, async_mode: bool, verbose: bool) 
     for md in metrics_data:
         key = name_to_key.get(md.name, md.name)
         seen.add(key)
-        spec = get_spec(key) if key in name_to_key.values() else None
+        metric_spec = get_spec(key) if key in name_to_key.values() else None
         case.metrics.append(MetricResult(
             key=key,
-            name=spec.display_name if spec else md.name,
+            name=metric_spec.display_name if metric_spec else md.name,
             threshold=md.threshold,
-            lower_is_better=spec.lower_is_better if spec else False,
+            lower_is_better=metric_spec.lower_is_better if metric_spec else False,
             expected_pass=expected_pass,
             score=md.score,
             success=md.success,

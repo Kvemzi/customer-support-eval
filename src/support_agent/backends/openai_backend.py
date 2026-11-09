@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List
 
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from support_agent.backends.base import LLMBackend
 from support_agent.schemas import Message
@@ -19,8 +20,19 @@ class OpenAIBackend(LLMBackend):
         self.temperature = temperature
 
     def generate(self, system_prompt, history: List[Message], user_message, context) -> str:
-        messages = [{"role": "system", "content": system_prompt}, *history,
-                    {"role": "user", "content": user_message}]
+        messages: List[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system_prompt}
+        ]
+        for message in history:
+            if message["role"] == "user":
+                messages.append({"role": "user", "content": message["content"]})
+            elif message["role"] == "assistant":
+                messages.append({"role": "assistant", "content": message["content"]})
+            elif message["role"] == "system":
+                messages.append({"role": "system", "content": message["content"]})
+            else:
+                raise ValueError(f"Unsupported message role: {message['role']}")
+        messages.append({"role": "user", "content": user_message})
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=messages,

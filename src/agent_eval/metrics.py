@@ -4,8 +4,8 @@ agent_eval.metrics
 Central metric registry for the evaluation harness.
 
 Thresholds, score direction and test-case compatibility are defined only here.
-Both scripts/run_evaluation.py (Prompt 3) and tests/evals/test_suite.py
-(Prompt 4) import from this module, so the two runners can never disagree.
+Both scripts/run_evaluation.py and tests/evals/test_suite.py import from this
+module, so the two runners can never disagree.
 
 Routing
 -------
@@ -133,7 +133,7 @@ METRIC_REGISTRY: Dict[str, MetricSpec] = {
 
 def get_judge_model(override: Optional[str] = None) -> str:
     """Judge (evaluator) model: CLI override > EVAL_JUDGE_MODEL > default."""
-    return override or os.getenv("EVAL_JUDGE_MODEL", DEFAULT_JUDGE_MODEL)
+    return override or os.getenv("EVAL_JUDGE_MODEL") or DEFAULT_JUDGE_MODEL
 
 
 def get_spec(key: str) -> MetricSpec:

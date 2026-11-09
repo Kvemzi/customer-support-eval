@@ -1,0 +1,1 @@
+"""Packaged ShopCo policy data."""

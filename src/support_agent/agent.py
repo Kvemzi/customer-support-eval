@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import re
+from typing import List, Optional
 
 from support_agent.backends import LLMBackend, build_backend
 from support_agent.config import Settings
@@ -13,6 +14,13 @@ from support_agent.prompts import build_system_prompt
 from support_agent.schemas import AgentResponse
 
 logger = logging.getLogger(__name__)
+
+FOLLOW_UP_REFERENCE = re.compile(
+    r"^\s*(?:(?:and|but|so)\s+)?"
+    r"(?:how long (?:is|does|will) (?:it|that|this)(?: take| last)?"
+    r"|what about (?:it|that|this|them|those|these))\s*[?.!]*\s*$",
+    re.IGNORECASE,
+)
 
 FALLBACK_ANSWER = (
     "I'm sorry, I'm having technical difficulties right now. "
@@ -45,6 +53,7 @@ class SupportAgent:
         self.memory = memory
         self.top_k = top_k
         self._turn_counter = 0
+        self._last_context: List[str] = []
 
     @classmethod
     def from_settings(cls, settings: Optional[Settings] = None) -> "SupportAgent":
@@ -66,6 +75,8 @@ class SupportAgent:
             raise ValueError("user_message must be a non-empty string")
 
         context = self.knowledge_base.retrieve(user_message, top_k=self.top_k)
+        if not context and FOLLOW_UP_REFERENCE.search(user_message):
+            context = list(self._last_context)
         system_prompt = build_system_prompt(context)
         history = self.memory.get_messages()  # excludes the current message
 
@@ -77,6 +88,7 @@ class SupportAgent:
 
         self.memory.add_user_message(user_message)
         self.memory.add_assistant_message(answer)
+        self._last_context = list(context)
         self._turn_counter += 1
 
         return AgentResponse(
@@ -90,4 +102,5 @@ class SupportAgent:
     def reset(self) -> None:
         """Start a new, independent conversation."""
         self.memory.reset()
+        self._last_context.clear()
         self._turn_counter = 0

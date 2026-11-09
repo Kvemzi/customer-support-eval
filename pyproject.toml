@@ -9,7 +9,7 @@ description = "Customer-support AI agent (SUT) and its LLM-as-a-judge evaluation
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "deepeval>=3.0.0",
+    "deepeval>=4.3.2,<5.0",
     "pytest>=8.0.0",
     "python-dotenv>=1.0.0",
     "openai>=1.30.0",
@@ -17,20 +17,28 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff>=0.5.0", "mypy>=1.10.0"]
+dev = ["ruff>=0.5.0", "mypy>=1.10.0", "setuptools>=68", "wheel"]
 
 [project.scripts]
 # After installation: `shopco-chat` starts the interactive agent.
 shopco-chat = "support_agent.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = ["agent_eval", "support_agent", "support_agent.backends", "shopco_policy_data"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+shopco_policy_data = "data/knowledge_base"
+
+[tool.setuptools.package-data]
+shopco_policy_data = ["policies.json"]
 
 [tool.pytest.ini_options]
 # Restrict collection to tests/ so src/agent_eval/test_dataset.py
 # is NOT mistaken for a test module.
 testpaths = ["tests"]
 addopts = "-ra"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "llm: tests that call the LLM judge (cost tokens, require OPENAI_API_KEY)",
 ]
@@ -38,3 +46,9 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.pyright]
+extraPaths = ["src", "scripts"]

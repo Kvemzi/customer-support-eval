@@ -15,3 +15,21 @@ def test_reset_clears_memory(mock_agent):
     mock_agent.chat("Where is my package?")
     mock_agent.reset()
     assert len(mock_agent.memory) == 0
+
+
+def test_referential_follow_up_reuses_previous_context(mock_agent):
+    first = mock_agent.chat("How long do refunds take?")
+    follow_up = mock_agent.chat("And how long is that?")
+    assert first.retrieval_context
+    assert follow_up.retrieval_context == first.retrieval_context
+    assert "5-7 business days" in follow_up.answer
+
+
+def test_unrelated_turn_and_reset_clear_follow_up_context(mock_agent):
+    mock_agent.chat("How long do refunds take?")
+    assert mock_agent.chat("Do you sell this car on Mars?").retrieval_context == []
+    assert mock_agent.chat("How long is that?").retrieval_context == []
+
+    mock_agent.chat("How long do refunds take?")
+    mock_agent.reset()
+    assert mock_agent.chat("How long is that?").retrieval_context == []

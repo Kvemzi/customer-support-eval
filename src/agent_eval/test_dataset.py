@@ -37,9 +37,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union, cast
 
-from deepeval.test_case import ConversationalTestCase, LLMTestCase, Turn
+from deepeval.test_case import (
+    ConversationalTestCase,
+    LLMTestCase,
+    RetrievedContextData,
+    Turn,
+)
 
 from support_agent.config import Settings
 from support_agent.knowledge_base import KnowledgeBase
@@ -47,7 +52,7 @@ from support_agent.knowledge_base import KnowledgeBase
 DatasetMode = Literal["static", "live"]
 AnyTestCase = Union[LLMTestCase, ConversationalTestCase]
 
-# Metric keys. Prompt 3's metric registry uses these to route metrics to cases.
+# Metric keys used by the registry to route metrics to cases.
 M_ANSWER_RELEVANCY = "answer_relevancy"
 M_HALLUCINATION = "hallucination"
 M_TOXICITY = "toxicity"
@@ -72,10 +77,13 @@ def _context(*topics: str) -> List[str]:
 
 
 def _resolve_mode(mode: Optional[str]) -> DatasetMode:
-    resolved = (mode or os.getenv("EVAL_DATASET_MODE", "static")).lower()
-    if resolved not in ("static", "live"):
+    resolved = (mode or os.getenv("EVAL_DATASET_MODE") or "static").lower()
+    if resolved == "static":
+        return "static"
+    if resolved == "live":
+        return "live"
+    else:
         raise ValueError(f"Invalid dataset mode '{resolved}'. Use 'static' or 'live'.")
-    return resolved  # type: ignore[return-value]
 
 
 # =============================================================================
@@ -716,13 +724,16 @@ def _build_single_turn(spec: SingleTurnSpec, mode: DatasetMode, agent=None) -> L
     actually retrieved, which helps debug retrieval versus generation failures.
     """
     use_live = mode == "live" and spec.live_eligible and agent is not None
-    retrieval_context: Optional[List[str]] = None
+    retrieval_context: Optional[List[Union[str, RetrievedContextData]]] = None
 
     if use_live:
         agent.reset()  # every single-turn case is an independent conversation
         response = agent.chat(spec.input)
         actual_output = response.answer
-        retrieval_context = response.retrieval_context or None
+        retrieval_context = (
+            [passage for passage in response.retrieval_context]
+            if response.retrieval_context else None
+        )
     else:
         actual_output = spec.static_output
 
@@ -733,7 +744,7 @@ def _build_single_turn(spec: SingleTurnSpec, mode: DatasetMode, agent=None) -> L
         expected_output=spec.expected_output,
         context=_context(*spec.context_topics),
         retrieval_context=retrieval_context,
-        additional_metadata=_metadata(spec, "live" if use_live else "static"),
+        metadata=_metadata(spec, "live" if use_live else "static"),
     )
 
 
@@ -752,7 +763,10 @@ def _build_conversational(
             turns.append(Turn(
                 role="assistant",
                 content=response.answer,
-                retrieval_context=response.retrieval_context or None,
+                retrieval_context=cast(
+                    Optional[List[Union[str, RetrievedContextData]]],
+                    response.retrieval_context or None,
+                ),
             ))
     else:
         for user_msg, assistant_msg, topics in spec.static_turns:
@@ -760,7 +774,10 @@ def _build_conversational(
             turns.append(Turn(
                 role="assistant",
                 content=assistant_msg,
-                retrieval_context=_context(*topics) if topics else None,
+                retrieval_context=cast(
+                    Optional[List[Union[str, RetrievedContextData]]],
+                    _context(*topics) if topics else None,
+                ),
             ))
 
     return ConversationalTestCase(
@@ -771,7 +788,7 @@ def _build_conversational(
         user_description=spec.user_description,
         chatbot_role=spec.chatbot_role,
         context=_context(*spec.context_topics),
-        additional_metadata=_metadata(spec, "live" if use_live else "static"),
+        metadata=_metadata(spec, "live" if use_live else "static"),
     )
 
 
@@ -801,34 +818,47 @@ def get_conversational_test_cases(mode: Optional[str] = None) -> List[Conversati
     return [_build_conversational(spec, resolved, agent) for spec in CONVERSATIONAL_SPECS]
 
 
-def get_all_test_cases(mode: Optional[str] = None) -> List[AnyTestCase]:
-    return _order_cases(
-        get_single_turn_test_cases(mode),
-        get_conversational_test_cases(mode),
+def get_all_test_cases(
+    mode: Optional[str] = None, case_ids: Optional[List[str]] = None
+) -> List[AnyTestCase]:
+    resolved = _resolve_mode(mode)
+    selected = set(case_ids) if case_ids else {spec.id for spec in ALL_CASE_SPECS}
+    missing = selected - {spec.id for spec in ALL_CASE_SPECS}
+    if missing:
+        raise KeyError(f"Unknown case id(s): {sorted(missing)}")
+
+    specs = [spec for spec in ALL_CASE_SPECS if spec.id in selected]
+    needs_agent = resolved == "live" and any(
+        isinstance(spec, ConversationalSpec) or spec.live_eligible for spec in specs
     )
+    agent = _make_agent(resolved) if needs_agent else None
+    cases: List[AnyTestCase] = []
+    for spec in specs:
+        if isinstance(spec, SingleTurnSpec):
+            cases.append(_build_single_turn(spec, resolved, agent))
+        else:
+            cases.append(_build_conversational(spec, resolved, agent))
+    return cases
 
 
 def get_metadata(test_case: AnyTestCase) -> Dict:
     """Return the metadata dict (id, category, target_metrics, expected_verdict, ...)."""
-    return dict(test_case.additional_metadata or {})
+    return dict(test_case.metadata or {})
 
 
 def _order_cases(
     single_turn_cases: List[LLMTestCase],
     conversational_cases: List[ConversationalTestCase],
 ) -> List[AnyTestCase]:
-    cases_by_id = {
-        get_metadata(case)["id"]: case
+    cases_by_id: Dict[str, AnyTestCase] = {
+        get_metadata(cast(AnyTestCase, case))["id"]: cast(AnyTestCase, case)
         for case in (*single_turn_cases, *conversational_cases)
     }
     return [cases_by_id[spec.id] for spec in ALL_CASE_SPECS]
 
 
 def get_case_by_id(case_id: str, mode: Optional[str] = None) -> AnyTestCase:
-    for case in get_all_test_cases(mode):
-        if get_metadata(case).get("id") == case_id:
-            return case
-    raise KeyError(f"No test case with id '{case_id}'")
+    return get_all_test_cases(mode, case_ids=[case_id])[0]
 
 
 # =============================================================================

@@ -40,7 +40,7 @@ between runs.
 |---|---|
 | **Grounded answers** | A keyword retriever selects policy passages. The system prompt instructs the model to answer *only* from that context. |
 | **Safe refusal** | If nothing relevant is retrieved, the agent says so and offers a human handoff instead of inventing a policy. |
-| **Dialogue memory** | A sliding window of the last `N` user/assistant pairs (`SUT_MEMORY_MAX_TURNS`), so later turns can use details such as an order number. |
+| **Dialogue memory** | A sliding window of the last `N` user/assistant pairs (`SUT_MEMORY_MAX_TURNS`), so later turns can use details such as an order number. When retrieval finds nothing, a small set of explicit follow-ups (such as “How long is that?” or “What about it?”) can reuse the previous turn's policy context. An unrelated ungrounded turn or `/reset` clears it. |
 | **De-escalation** | The prompt requires a polite, neutral tone and forbids assumptions based on personal attributes. |
 | **Pluggable backends** | `openai` (real LLM), `mock` (deterministic, offline), `http` (agent behind a REST API). Selected via `SUT_BACKEND`. |
 
@@ -90,9 +90,19 @@ On Windows PowerShell, activate and create the environment file with:
 Copy-Item .env.example .env
 ```
 
+If DeepEval's console output fails with a Unicode encoding error on Windows,
+set `$env:PYTHONIOENCODING = "utf-8"` in the same PowerShell session before running it.
+
 The key is read from `.env` at the project root. Keep the real `.env` out of version
 control and replace the example `OPENAI_API_KEY` value with your key. For offline SUT
 tests, set `SUT_BACKEND=mock`; LLM-judge runs still require `OPENAI_API_KEY`.
+The requirements file applies the pinned transitive versions in `requirements.lock`.
+To regenerate that lock after changing dependencies, install `uv` and run
+`uv pip compile pyproject.toml --universal --extra dev --output-file requirements.lock`.
+For lint and type-check tooling, install the dev extra with
+`pip install -c requirements.lock -e ".[dev]"`.
+The default policy file is also included in the wheel; `SUT_KB_PATH` can still
+point to a different file.
 
 ### Commands
 
@@ -100,6 +110,8 @@ tests, set `SUT_BACKEND=mock`; LLM-judge runs still require `OPENAI_API_KEY`.
 |---|---|---|
 | Chat with the agent | `make chat` | only if `SUT_BACKEND=openai` |
 | Deterministic unit tests | `make test-unit` | no |
+| Lint (requires the dev extra) | `make lint` | no |
+| Type check (requires the dev extra) | `mypy src scripts` | no |
 | Programmatic evaluation (static dataset) | `make eval` | judge only |
 | Programmatic evaluation of the live agent | `make eval-live` | SUT + judge |
 | **Double run + variability report** | `make eval-twice` | SUT + judge |
@@ -194,7 +206,8 @@ Replacing a deterministic oracle with a stochastic one creates a new problem:
 5. **Single source of truth for thresholds.** `agent_eval/metrics.py` feeds both the script
    and the pytest suite.
 6. **Repeated runs.** The variability report flags every (case, metric) pair whose verdict
-   flips or whose score range exceeds 0.10.
+   flips or whose score range exceeds 0.10. A pair with missing or failed measurements is
+   marked `INCOMPLETE`, not stable.
 
 ### 3.4 Testing pyramid
 
@@ -253,19 +266,31 @@ addresses the actual question.
 
 ## 5. Latest evaluation results
 
-The newest saved batch (`20261106T091735Z-ce2814`) contains two live runs of all 23 cases
-using `gpt-4o-mini` as judge and SUT. **Each run matched expected verdicts for 21/23
-cases**; costs were **$0.011477** and **$0.011345** (mean **$0.011411**). TC-08 and TC-12
-Answer Relevancy were the only unexpected results in both runs:
+The latest full run (`20261109T005242Z-1a7bfa`) evaluated all 23 cases in live mode
+using `gpt-4o-mini` as judge and SUT. It matched expected verdicts for **22/23 cases**,
+with a judge cost of **$0.011261**. TC-17 Answer Relevancy was the only unexpected
+result:
 
-The batch is recorded in `reports/eval_20261106T091735Z-ce2814_live_run1.json`,
+| Case | Metric | Score | Pass condition | Verdict | As expected |
+|---|---|---:|---|---|---|
+| TC-17 | Answer Relevancy | 0.67 | >= 0.7 | FAIL | **NO** |
+
+This single-run report is recorded in
+`reports/eval_20261109T005242Z-1a7bfa_live_run1.json`. It used prompt `v1.3`,
+knowledge base `1.0.0` and DeepEval `4.3.3`. TC-08 and TC-12 passed this run, but
+TC-12's Answer Relevancy was 0.50 in the preceding full run for a similar answer,
+so a single passing score does not establish stability. The detailed two-run results below
+are from an earlier batch `20261106T091735Z-ce2814`; they are retained as historical
+variability data, not the latest evaluation.
+
+The earlier batch is recorded in `reports/eval_20261106T091735Z-ce2814_live_run1.json`,
 `reports/eval_20261106T091735Z-ce2814_live_run2.json` and
 `reports/variability_20261106T091735Z-ce2814_2runs.json`. These local report files are
 gitignored; CI uploads generated reports as an `eval-reports` artifact. The archived
 JSON predates the score-direction metadata correction, so the summary script renders
 comparators from the current metric registry.
 
-**Run 1** (mode: `live`, judge: `gpt-4o-mini`, judge cost: $0.011477)
+**Earlier batch, run 1** (mode: `live`, judge: `gpt-4o-mini`, judge cost: $0.011477)
 
 Both runs used prompt `v1.0`, knowledge base `1.0.0`, DeepEval `4.3.2`, SUT backend
 `auto` / model `gpt-4o-mini` / temperature `0.3`.
@@ -470,7 +495,7 @@ single judge score as ground truth.
 
 ```
 support-agent-eval/
-├── data/knowledge_base/policies.json   # ground truth (SUT + tests)
+├── data/knowledge_base/policies.json   # ground truth (SUT + tests; included in wheel)
 ├── src/
 │   ├── support_agent/                  # System Under Test
 │   │   ├── agent.py  config.py  schemas.py  memory.py  prompts.py  knowledge_base.py  cli.py

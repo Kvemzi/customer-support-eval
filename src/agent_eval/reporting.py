@@ -234,10 +234,17 @@ def compute_variability(runs: List[RunResult]) -> List[Dict[str, Any]]:
                 b = buckets.setdefault((case.case_id, m.key), {
                     "case_id": case.case_id, "metric": m.name,
                     "threshold": m.threshold, "scores": [], "verdicts": [],
+                    "valid_runs": 0,
                 })
-                if m.score is not None:
+                if (
+                    case.error is None and m.error is None
+                    and m.score is not None and m.success is not None
+                ):
                     b["scores"].append(round(m.score, 4))
-                b["verdicts"].append(m.success)
+                    b["verdicts"].append(m.success)
+                    b["valid_runs"] += 1
+                else:
+                    b["verdicts"].append(None)
 
     rows: List[Dict[str, Any]] = []
     for b in buckets.values():
@@ -251,6 +258,7 @@ def compute_variability(runs: List[RunResult]) -> List[Dict[str, Any]]:
             "range": round(spread, 4) if spread is not None else None,
             "verdict_flip": flipped,
             "unstable": flipped or (spread is not None and spread > UNSTABLE_RANGE),
+            "complete": b["valid_runs"] == len(runs),
         })
     return rows
 
@@ -265,13 +273,18 @@ def print_variability_report(rows: List[Dict[str, Any]], num_runs: int) -> None:
         scores = ", ".join(f"{s:.2f}" for s in r["scores"]) or "n/a"
         rng = "n/a" if r["range"] is None else f"{r['range']:.2f}"
         mean = "n/a" if r["mean"] is None else f"{r['mean']:.2f}"
-        status = red("UNSTABLE") if r["unstable"] else green("stable")
+        if not r["complete"]:
+            status = yellow("INCOMPLETE")
+        else:
+            status = red("UNSTABLE") if r["unstable"] else green("stable")
         print(f" {r['case_id']:<8}{r['metric']:<28}{scores:<22}{mean:>7}{rng:>8}"
               f"{('yes' if r['verdict_flip'] else 'no'):>6}  {status}")
-    unstable = sum(r["unstable"] for r in rows)
+    unstable = sum(r["unstable"] and r["complete"] for r in rows)
+    incomplete = sum(not r["complete"] for r in rows)
     print(" " + "-" * 86)
     print(f" Unstable metric/case pairs: {unstable}/{len(rows)} "
           f"(flip in verdict or score range > {UNSTABLE_RANGE})")
+    print(f" Incomplete metric/case pairs: {incomplete}/{len(rows)}")
     print(LINE)
 
 

@@ -32,4 +32,10 @@ class HttpBackend(LLMBackend):
         }
         resp = requests.post(self.endpoint, json=payload, timeout=self.timeout)
         resp.raise_for_status()
-        return str(resp.json().get("answer", "")).strip()
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise ValueError("HTTP backend response must be a JSON object")
+        answer = data.get("answer")
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError("HTTP backend response must contain a non-empty string answer")
+        return answer.strip()

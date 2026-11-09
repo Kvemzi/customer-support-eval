@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 from typing import Optional
 
@@ -17,7 +18,11 @@ from dotenv import load_dotenv
 
 # src/support_agent/config.py -> parents[2] == project root
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
-DEFAULT_KB_PATH: Path = PROJECT_ROOT / "data" / "knowledge_base" / "policies.json"
+SOURCE_KB_PATH: Path = PROJECT_ROOT / "data" / "knowledge_base" / "policies.json"
+DEFAULT_KB_PATH: Path = (
+    SOURCE_KB_PATH if SOURCE_KB_PATH.is_file()
+    else Path(str(files("shopco_policy_data").joinpath("policies.json")))
+)
 
 # Load .env from the project root regardless of the current working directory.
 load_dotenv(PROJECT_ROOT / ".env")
